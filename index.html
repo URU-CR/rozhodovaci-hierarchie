@@ -110,6 +110,14 @@ label.f :focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(
 .modal h3{margin:0 0 8px;font-size:16px}
 .modal textarea{width:100%;height:280px;border:1px solid var(--line);border-radius:8px;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.peer{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;color:#fff;font-size:9.5px;font-weight:600;flex:none;border:2px solid #fff;margin-left:-5px;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.peers{display:inline-flex;padding-left:5px;flex:none}
+#online{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+#online .peer{width:26px;height:26px;font-size:11px}
+.busy{outline:2px solid var(--pc)!important;outline-offset:1px}
+.busyTag{display:inline-block;font-size:11.5px;color:#fff;background:var(--pc);border-radius:4px;padding:1px 7px;font-weight:500;align-self:flex-start;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.6}}
+.viewers{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px;margin-bottom:8px}
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#18212c;color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
 #toast.on{opacity:1}
 </style>
@@ -121,6 +129,7 @@ label.f :focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(
     <div class="sub">Pracovní skupina ISSŘ · klíčová rozhodnutí předsedy ÚRÚ ČR a jejich rozpad do nižších úrovní</div>
   </div>
   <div class="grow"></div>
+  <div id="online"></div>
   <div class="stats" id="stats"></div>
   <span class="save" id="saveState"></span>
   <button class="btn" id="btnMe" title="Změnit jméno">Jméno: –</button>
@@ -147,8 +156,7 @@ label.f :focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(
 <script>
 (function(){
 const STATUS={
-  navrh:['Návrh','#5f6b7a','#eef0f3'],
-  diskuse:['V diskusi','#8a5a00','#fff2d1'],
+  rozpracovano:['Rozpracováno','#8a5a00','#fff2d1'],
   pripraveno:['Připraveno k rozhodnutí','#1d5bb8','#e3edfc'],
   rozhodnuto:['Rozhodnuto','#1a7f37','#e1f4e6'],
   odlozeno:['Odloženo','#6e5a8a','#eee9f5']
@@ -173,6 +181,37 @@ function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 // internal <-> db column mapping
 const COL={title:'title',question:'question',intent:'intent',consequence:'consequence',options:'options',decision:'decision',owner:'owner',due:'due',status:'status',reversibility:'reversibility',deps:'deps',parentId:'parent_id',order:'sort_order'};
 function fromRow(r){return{id:r.id,parentId:r.parent_id||'',order:r.sort_order,title:r.title,question:r.question,intent:r.intent,consequence:r.consequence,options:r.options,decision:r.decision,owner:r.owner,due:r.due||'',status:r.status,reversibility:r.reversibility,deps:r.deps||[],createdBy:r.created_by,createdAt:Date.parse(r.created_at),updatedBy:r.updated_by,updatedAt:Date.parse(r.updated_at)};}
+// ---------- presence ----------
+const clientId=Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+let ch=null,chReady=false,myField='';
+var S_peers=[];
+const PALETTE=['#d1495b','#00798c','#edae49','#6a4c93','#2e7d32','#c2185b','#1565c0','#ef6c00','#5d4037','#00897b'];
+function colorOf(n){let h=0;for(const c of String(n))h=(h*31+c.charCodeAt(0))>>>0;return PALETTE[h%PALETTE.length];}
+function initials(n){const p=String(n||'?').trim().split(/\s+/);return ((p[0]||'?')[0]+(p.length>1?p[p.length-1][0]:'')).toUpperCase();}
+function badge(p){return `<span class="peer" style="background:${colorOf(p.name)}" title="${esc(p.name)}">${esc(initials(p.name))}</span>`;}
+function peerBadges(id){const ps=S_peers.filter(p=>p.sel===id);return ps.length?'<span class="peers">'+ps.map(badge).join('')+'</span>':'';}
+const FIELD_NAMES={title:'název',status:'stav',reversibility:'vratnost',owner:'garanta',due:'termín',question:'„Co se rozhoduje“',intent:'záměr',consequence:'„Co se stane…“',options:'varianty',decision:'přijaté rozhodnutí'};
+function trackMe(){if(ch&&chReady)ch.track({name:me||'Anonym',sel:S.sel||'',field:myField}).catch(()=>{});}
+function renderPresence(){
+  const on=$('#online');
+  on.innerHTML=S_peers.length?'Online:'+'<span class="peers" style="padding-left:8px">'+S_peers.map(badge).join('')+'</span>':'';
+  const box=$('#detail');
+  box.querySelectorAll('.busyTag').forEach(e=>e.remove());
+  box.querySelectorAll('.busy').forEach(e=>e.classList.remove('busy'));
+  const v=$('#viewers');
+  if(!v||!S.sel)return;
+  const here=S_peers.filter(p=>p.sel===S.sel);
+  v.innerHTML=here.length?'<span class="peers">'+here.map(badge).join('')+'</span> Právě si prohlíží: '+here.map(p=>esc(p.name)).join(', '):'';
+  for(const p of here){
+    if(!p.field)continue;
+    const el=box.querySelector(`[data-f="${CSS.escape(p.field)}"]`);if(!el)continue;
+    const c=colorOf(p.name);
+    el.style.setProperty('--pc',c);el.classList.add('busy');
+    const t=document.createElement('span');t.className='busyTag';t.style.setProperty('--pc',c);
+    t.textContent='✎ '+p.name+' upravuje '+(FIELD_NAMES[p.field]||'pole')+'…';
+    el.parentElement.insertBefore(t,el);
+  }
+}
 function toCols(p){const o={};for(const k in p){if(!(k in COL))continue;let v=p[k];if((k==='parentId'||k==='due')&&!v)v=null;o[COL[k]]=v;}return o;}
 const S={dec:new Map(),com:[],sel:null,collapsed:new Set(),q:'',st:'',loadedD:false,loadedC:false,rendered:null,focusTitle:false};
 let kids=new Map(),num=new Map(),depthOf=new Map();
@@ -182,7 +221,7 @@ const pending={};const queues={};
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2200);}
 function fmt(ts){if(!ts)return'';const d=new Date(ts);return d.toLocaleDateString('cs-CZ',{day:'numeric',month:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('cs-CZ',{hour:'2-digit',minute:'2-digit'});}
 function fmtDate(s){if(!s)return'';const p=s.split('-');return p.length===3?`${+p[2]}. ${+p[1]}. ${p[0]}`:s;}
-function stOf(d){return STATUS[d.status]||STATUS.navrh;}
+function stOf(d){return STATUS[d.status]||STATUS.rozpracovano;}
 function pid(d){return d.parentId&&S.dec.has(d.parentId)?d.parentId:'';}
 function rebuild(){
   kids=new Map();
@@ -222,13 +261,13 @@ function fillNames(root){
 
 // ---------- header stats ----------
 function renderStats(){
-  const c={};for(const d of S.dec.values())c[d.status||'navrh']=(c[d.status||'navrh']||0)+1;
+  const c={};for(const d of S.dec.values())c[d.status||'rozpracovano']=(c[d.status||'rozpracovano']||0)+1;
   $('#stats').innerHTML=Object.keys(STATUS).filter(k=>c[k]).map(k=>{const s=STATUS[k];return `<span class="pill" style="color:${s[1]};background:${s[2]}">${s[0]}: ${c[k]}</span>`;}).join('');
 }
 
 // ---------- tree ----------
 function matches(d){
-  if(S.st&&(d.status||'navrh')!==S.st)return false;
+  if(S.st&&(d.status||'rozpracovano')!==S.st)return false;
   const q=S.q.trim().toLowerCase();if(!q)return true;
   return ['title','question','intent','options','owner','consequence','decision'].some(k=>String(d[k]||'').toLowerCase().includes(q));
 }
@@ -248,7 +287,7 @@ function renderTree(){
         `<span class="num">${num.get(d.id)||''}</span><span class="tt" title="${esc(d.title)}">${esc(d.title||'(bez názvu)')}</span>`+
         (d.reversibility==='nevratne'?'<span class="irr" title="Nevratné rozhodnutí">⚑</span>':'')+
         (cc[d.id]?`<span class="cc" title="Počet komentářů">✎ ${cc[d.id]}</span>`:'')+
-        `<span class="pill" style="color:${s[1]};background:${s[2]}">${s[0]}</span></div>`+
+        peerBadges(d.id)+`<span class="pill" style="color:${s[1]};background:${s[2]}">${s[0]}</span></div>`+
         (ch&&open?build(d.id,dep+1):'')+'</li>';
     }).join('')+'</ul>';
   };
@@ -258,7 +297,8 @@ function renderTree(){
 
 // ---------- detail ----------
 function render(){rebuild();renderStats();renderTree();renderDetail();}
-function renderDetail(){
+function renderDetail(){_renderDetail();renderPresence();}
+function _renderDetail(){
   const d=S.sel&&S.dec.get(S.sel);const box=$('#detail');
   if(!d){if(S.rendered!=='__ov'||true){box.innerHTML=overviewHTML();S.rendered='__ov';fillNames(box);}return;}
   if(S.rendered!==d.id){box.innerHTML=detailHTML(d);S.rendered=d.id;bindDetail(d.id);box.scrollTop=0;}
@@ -266,7 +306,7 @@ function renderDetail(){
   if(S.focusTitle){S.focusTitle=false;const t=box.querySelector('[data-f="title"]');if(t){t.focus();t.select();}}
 }
 function overviewHTML(){
-  const c={};for(const d of S.dec.values())c[d.status||'navrh']=(c[d.status||'navrh']||0)+1;
+  const c={};for(const d of S.dec.values())c[d.status||'rozpracovano']=(c[d.status||'rozpracovano']||0)+1;
   const irr=[...S.dec.values()].filter(d=>d.reversibility==='nevratne'&&d.status!=='rozhodnuto');
   const feed=S.com.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
   return `<div class="wrap ov"><h2>Jak s hierarchií pracovat</h2>
@@ -283,6 +323,7 @@ function overviewHTML(){
 function kidRow(d){const s=stOf(d);return `<div class="kid" data-goto="${esc(d.id)}"><span class="num">${num.get(d.id)||''}</span><span class="tt">${esc(d.title||'(bez názvu)')}</span>${d.reversibility==='nevratne'?'<span class="irr">⚑</span>':''}<span class="pill" style="color:${s[1]};background:${s[2]}">${s[0]}</span></div>`;}
 function detailHTML(d){
   return `<div class="wrap">
+  <div class="viewers" id="viewers"></div>
   <div class="crumbs" id="crumbs"></div>
   <span class="lvlTag" id="lvlTag"></span>
   <div class="titleRow"><span class="bignum" id="bignum"></span><input data-f="title" maxlength="200" placeholder="Název rozhodnutí"></div>
@@ -315,7 +356,7 @@ function syncDetail(d){
   const box=$('#detail');
   box.querySelectorAll('[data-f]').forEach(el=>{
     const f=el.dataset.f;if(el===document.activeElement||pending[d.id+'|'+f])return;
-    const v=d[f]==null?(f==='status'?'navrh':''):d[f];if(el.value!==v)el.value=v;
+    const v=d[f]==null?(f==='status'?'rozpracovano':''):d[f];if(el.value!==v)el.value=v;
     if(el.tagName==='TEXTAREA')autosize(el);
   });
   const anc=ancestors(d);
@@ -389,7 +430,7 @@ async function createDecision(parentId){
   const {data,error}=await sb.from('rh_decisions').insert({parent_id:parentId||null,sort_order:order,title:'Nové rozhodnutí',created_by:me,updated_by:me}).select().single();
   if(error){handleErr(error);return;}
   setSave('Uloženo ✓');
-  S.dec.set(data.id,fromRow(data));S.sel=data.id;S.focusTitle=true;render();
+  S.dec.set(data.id,fromRow(data));S.sel=data.id;S.focusTitle=true;render();trackMe();
 }
 async function move(id,dir){
   const d=S.dec.get(id);const sib=(kids.get(pid(d))||[]).slice();const i=sib.findIndex(x=>x.id===id),j=i+dir;
@@ -457,7 +498,7 @@ document.addEventListener('click',e=>{
   const node=e.target.closest('.node[data-id]');
   if(node){select(node.dataset.id);}
 });
-function select(id){if(!S.dec.has(id))return;S.sel=id;let x=S.dec.get(id);ancestors(x).forEach(a=>S.collapsed.delete(a.id));renderTree();renderDetail();const n=document.querySelector(`.node[data-id="${CSS.escape(id)}"]`);if(n)n.scrollIntoView({block:'nearest'});}
+function select(id){if(!S.dec.has(id))return;S.sel=id;myField='';setTimeout(trackMe,0);let x=S.dec.get(id);ancestors(x).forEach(a=>S.collapsed.delete(a.id));renderTree();renderDetail();const n=document.querySelector(`.node[data-id="${CSS.escape(id)}"]`);if(n)n.scrollIntoView({block:'nearest'});}
 $('#q').addEventListener('input',e=>{S.q=e.target.value;renderTree();});
 $('#st').innerHTML+=Object.keys(STATUS).map(k=>`<option value="${k}">${STATUS[k][0]}</option>`).join('');
 $('#st').addEventListener('change',e=>{S.st=e.target.value;renderTree();});
@@ -465,6 +506,10 @@ $('#btnExpand').onclick=()=>{S.collapsed.clear();renderTree();};
 $('#btnCollapse').onclick=()=>{for(const [p,a] of kids)if(a.length&&p)S.collapsed.add(p);renderTree();};
 $('#btnAddRoot').onclick=()=>createDecision('');
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+$('#detail').addEventListener('focusin',e=>{const f=e.target.dataset&&e.target.dataset.f;if(f&&f!==myField){myField=f;trackMe();}});
+$('#detail').addEventListener('focusout',e=>{const f=e.target.dataset&&e.target.dataset.f;if(f&&myField===f){myField='';trackMe();}});
+// overview/back: deselect keeps presence accurate
+
 
 renderDetail();
 
@@ -486,7 +531,7 @@ function askName(force){
   const cur=me;
   modal(`<h3>Jak se jmenujete?</h3><p class="muted">Jméno se zobrazí u vašich komentářů a úprav. Uloží se jen v tomto prohlížeči.</p><input id="nameIn" class="btn" style="width:100%;text-align:left;padding:9px 11px" maxlength="60" value="${esc(cur)}" placeholder="např. Jan Novák"><div class="row">${cur?'<button class="btn" data-close>Zrušit</button>':''}<button class="btn primary" id="nameOk">Pokračovat</button></div>`);
   const inp=$('#nameIn');inp.focus();
-  const ok=()=>{const v=inp.value.trim();if(!v){inp.focus();return;}me=v;lsSet('rh_name',v);$('#btnMe').textContent='Jméno: '+v;closeModal();renderDetail();};
+  const ok=()=>{const v=inp.value.trim();if(!v){inp.focus();return;}me=v;lsSet('rh_name',v);trackMe();$('#btnMe').textContent='Jméno: '+v;closeModal();renderDetail();};
   $('#nameOk').onclick=ok;inp.addEventListener('keydown',e=>{if(e.key==='Enter')ok();});
 }
 $('#btnMe').onclick=()=>askName(true);
@@ -496,8 +541,15 @@ $('#btnMe').onclick=()=>askName(true);
   me=lsGet('rh_name');
   if(me)$('#btnMe').textContent='Jméno: '+me;else askName(false);
   try{await loadAll();}catch(e){$('#tree').innerHTML='<div class="empty">Data se nepodařilo načíst. Obnovte prosím stránku.</div>';console.error(e);return;}
-  sb.channel('rh').on('postgres_changes',{event:'*',schema:'public',table:'rh_decisions'},scheduleReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'rh_comments'},scheduleReload).subscribe();
+  ch=sb.channel('rh',{config:{presence:{key:clientId}}});
+  ch.on('postgres_changes',{event:'*',schema:'public',table:'rh_decisions'},scheduleReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'rh_comments'},scheduleReload)
+    .on('presence',{event:'sync'},()=>{
+      const st=ch.presenceState();S_peers=[];
+      for(const k in st){if(k===clientId)continue;const m=st[k]&&st[k][st[k].length-1];if(m&&m.name)S_peers.push({name:m.name,sel:m.sel||'',field:m.field||''});}
+      renderTree();renderPresence();
+    })
+    .subscribe(status=>{if(status==='SUBSCRIBED'){chReady=true;trackMe();}});
   setInterval(()=>{if(!document.hidden)scheduleReload();},30000);
 })();
 })();
