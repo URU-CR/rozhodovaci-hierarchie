@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rozhodovací hierarchie – transformace stavební správy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#fff;--ink:#18212c;--muted:#5d6876;--faint:#8a94a1;--line:#e1e5ea;--line2:#eef1f4;
+  --accent:#1d5bb8;--accent-bg:#e8f0fc;--danger:#b42318;--warn:#9a6700;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+header .sub{color:var(--muted);font-size:12.5px}
+header .grow{flex:1}
+.stats{display:flex;gap:6px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 11px;font-size:13px;white-space:nowrap}
+.btn:hover{border-color:#c5ccd5;background:#fafbfc}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#174c9b}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:3px 8px;font-size:12px}
+.save{font-size:12px;color:var(--faint);min-width:80px;text-align:right}
+.banner{background:#fff8e6;border-bottom:1px solid #f0dfb0;color:#6b4e00;padding:8px 20px;font-size:13px;display:none}
+main{display:grid;grid-template-columns:minmax(340px,440px) 1fr;height:calc(100vh - 62px);min-height:0}
+@media (max-width:860px){main{grid-template-columns:1fr;height:auto}#treePane{max-height:55vh}}
+#treePane{border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.tools{padding:10px 12px;border-bottom:1px solid var(--line2);display:flex;gap:6px;flex-wrap:wrap}
+.tools input,.tools select{border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:#fff;font-size:13px}
+.tools input{flex:1;min-width:140px}
+#tree{overflow:auto;padding:6px 6px 30px;flex:1}
+ul.tree{list-style:none;margin:0;padding:0}
+ul.tree ul.tree{padding-left:18px;border-left:1px dashed var(--line);margin-left:13px}
+.node{display:flex;align-items:center;gap:6px;padding:5px 8px 5px 2px;border-radius:7px;cursor:pointer;min-height:32px}
+.node:hover{background:#f4f6f9}
+.node.sel{background:var(--accent-bg)}
+.car{width:20px;height:20px;border:0;background:none;color:var(--muted);font-size:12px;padding:0;flex:none}
+.car:disabled{cursor:default}
+.num{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12.5px;flex:none;min-width:22px}
+.tt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lvl0 .tt{font-weight:600}
+.irr{color:var(--danger);font-size:12px;flex:none}
+.cc{font-size:11.5px;color:var(--muted);flex:none}
+.pill{font-size:11px;border-radius:99px;padding:1px 8px;flex:none;white-space:nowrap;font-weight:500}
+#detail{overflow:auto;padding:22px 28px 60px;min-height:0}
+.wrap{max-width:860px}
+.crumbs{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.crumbs a{color:var(--muted);cursor:pointer;text-decoration:none}
+.crumbs a:hover{color:var(--accent);text-decoration:underline}
+.lvlTag{display:inline-block;font-size:11.5px;color:var(--accent);background:var(--accent-bg);border-radius:5px;padding:1px 7px;margin-bottom:8px;font-weight:500}
+.titleRow{display:flex;gap:10px;align-items:flex-start}
+.titleRow .bignum{font-size:22px;font-weight:600;color:var(--muted);padding-top:4px;font-variant-numeric:tabular-nums}
+.titleRow input{flex:1;font-size:22px;font-weight:600;border:1px solid transparent;border-radius:7px;padding:3px 7px;background:transparent;letter-spacing:-.01em}
+.titleRow input:hover{border-color:var(--line)}
+.titleRow input:focus{border-color:var(--accent);outline:none;background:#fff}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:18px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500}
+label.f input,label.f select,label.f textarea{border:1px solid var(--line);border-radius:7px;padding:7px 9px;background:#fff;font-size:14px;color:var(--ink);font-weight:400}
+label.f textarea{resize:vertical;min-height:62px;line-height:1.5}
+label.f :focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+.sec{margin-bottom:16px}
+.sec h3{font-size:13px;margin:22px 0 8px;font-weight:600;display:flex;align-items:center;gap:8px}
+.sec h3 .hint{font-weight:400;color:var(--faint);font-size:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 6px 3px 10px;font-size:12.5px}
+.chip a{cursor:pointer;color:var(--ink)}
+.chip a:hover{color:var(--accent)}
+.chip button{border:0;background:none;color:var(--faint);padding:0 4px;font-size:14px;line-height:1}
+.chip button:hover{color:var(--danger)}
+.muted{color:var(--muted)}
+.faint{color:var(--faint);font-size:12.5px}
+.kids{display:flex;flex-direction:column;gap:2px}
+.kid{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer}
+.kid:hover{background:#f4f6f9}
+.cm{border-top:1px solid var(--line2);padding:10px 0}
+.cm:first-child{border-top:0;padding-top:0}
+.cmh{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.cmh .who{font-weight:600;color:var(--ink)}
+.cmh button{margin-left:auto;border:0;background:none;color:var(--faint);font-size:12px}
+.cmh button:hover{color:var(--danger)}
+.cmt{margin-top:3px;white-space:pre-wrap;word-wrap:break-word}
+.cmForm{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.cmForm textarea{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:64px;resize:vertical}
+.cmForm textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+.cmForm .row{display:flex;justify-content:space-between;align-items:center}
+.meta{margin-top:26px;font-size:12px;color:var(--faint)}
+.ov h2{font-size:19px;margin:0 0 6px}
+.ov p{color:var(--muted);max-width:700px}
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:16px 0 22px}
+.layers .card b{display:block;margin-bottom:3px}
+.statGrid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.statGrid .card{padding:10px 14px;min-width:120px}
+.statGrid .n{font-size:22px;font-weight:600}
+.feed .cm{cursor:pointer}
+.feed .cm:hover .cmt{color:var(--accent)}
+.empty{padding:28px 18px;color:var(--muted);text-align:center}
+.modalBg{position:fixed;inset:0;background:rgba(20,28,38,.35);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal{background:#fff;border-radius:12px;padding:20px 22px;max-width:560px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.modal h3{margin:0 0 8px;font-size:16px}
+.modal textarea{width:100%;height:280px;border:1px solid var(--line);border-radius:8px;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+.modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#18212c;color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Rozhodovací hierarchie – transformace stavební správy</h1>
+    <div class="sub">Pracovní skupina ISSŘ · klíčová rozhodnutí předsedy ÚRÚ ČR a jejich rozpad do nižších úrovní</div>
+  </div>
+  <div class="grow"></div>
+  <div class="stats" id="stats"></div>
+  <span class="save" id="saveState"></span>
+  <button class="btn" id="btnMe" title="Změnit jméno">Jméno: –</button>
+  <button class="btn" id="btnExport" title="Zkopíruje celou hierarchii jako Markdown osnovu">Kopírovat osnovu</button>
+</header>
+<div class="banner" id="banner"></div>
+<main>
+  <section id="treePane">
+    <div class="tools">
+      <input id="q" type="search" placeholder="Hledat v rozhodnutích…">
+      <select id="st"><option value="">Všechny stavy</option></select>
+      <button class="btn" id="btnExpand">Rozbalit</button>
+      <button class="btn" id="btnCollapse">Sbalit</button>
+      <button class="btn primary" id="btnAddRoot">+ Klíčové rozhodnutí</button>
+    </div>
+    <div id="tree"><div class="empty">Načítám…</div></div>
+  </section>
+  <section id="detail"></section>
+</main>
+
+<div class="modalBg" id="modalBg"><div class="modal" id="modal"></div></div>
+<div id="toast"></div>
+
+<script>
+(function(){
+const STATUS={
+  navrh:['Návrh','#5f6b7a','#eef0f3'],
+  diskuse:['V diskusi','#8a5a00','#fff2d1'],
+  pripraveno:['Připraveno k rozhodnutí','#1d5bb8','#e3edfc'],
+  rozhodnuto:['Rozhodnuto','#1a7f37','#e1f4e6'],
+  odlozeno:['Odloženo','#6e5a8a','#eee9f5']
+};
+const REV={'':'Neurčeno',nevratne:'Nevratné – jednosměrné dveře',vratne:'Vratné – lze později korigovat'};
+const TEXTS=[
+  ['question','Co se rozhoduje','Jaká otázka musí být zodpovězena, co přesně je předmětem rozhodnutí.'],
+  ['intent','Záměr – proč a čeho chceme dosáhnout','Velitelský záměr: podle něj se mají řídit rozhodnutí na nižších úrovních.'],
+  ['consequence','Co se stane, když se nerozhodne','Riziko odkladu, dopady na další rozhodnutí.'],
+  ['options','Varianty / možnosti','Zvažované alternativy, jejich výhody a nevýhody.'],
+  ['decision','Přijaté rozhodnutí','Vyplní se po rozhodnutí: co bylo rozhodnuto, kdy a kým.']
+];
+const LVL=['Úroveň 1 · klíčové rozhodnutí předsedy','Úroveň 2 · dílčí rozhodnutí','Úroveň 3 · prováděcí rozhodnutí','Úroveň 4+ · detailní rozhodnutí'];
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SB_URL='https://cwrsfuwypfycbtmzamus.supabase.co';
+const SB_KEY='sb_publishable_Cyo_R94ia4hhVZvrPHBwOQ_b3Kc-5wg';
+let sb=null,me='',canWrite=true;
+function lsGet(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
+function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+// internal <-> db column mapping
+const COL={title:'title',question:'question',intent:'intent',consequence:'consequence',options:'options',decision:'decision',owner:'owner',due:'due',status:'status',reversibility:'reversibility',deps:'deps',parentId:'parent_id',order:'sort_order'};
+function fromRow(r){return{id:r.id,parentId:r.parent_id||'',order:r.sort_order,title:r.title,question:r.question,intent:r.intent,consequence:r.consequence,options:r.options,decision:r.decision,owner:r.owner,due:r.due||'',status:r.status,reversibility:r.reversibility,deps:r.deps||[],createdBy:r.created_by,createdAt:Date.parse(r.created_at),updatedBy:r.updated_by,updatedAt:Date.parse(r.updated_at)};}
+function toCols(p){const o={};for(const k in p){if(!(k in COL))continue;let v=p[k];if((k==='parentId'||k==='due')&&!v)v=null;o[COL[k]]=v;}return o;}
+const S={dec:new Map(),com:[],sel:null,collapsed:new Set(),q:'',st:'',loadedD:false,loadedC:false,rendered:null,focusTitle:false};
+let kids=new Map(),num=new Map(),depthOf=new Map();
+const pending={};const queues={};
+
+// ---------- helpers ----------
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2200);}
+function fmt(ts){if(!ts)return'';const d=new Date(ts);return d.toLocaleDateString('cs-CZ',{day:'numeric',month:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('cs-CZ',{hour:'2-digit',minute:'2-digit'});}
+function fmtDate(s){if(!s)return'';const p=s.split('-');return p.length===3?`${+p[2]}. ${+p[1]}. ${p[0]}`:s;}
+function stOf(d){return STATUS[d.status]||STATUS.navrh;}
+function pid(d){return d.parentId&&S.dec.has(d.parentId)?d.parentId:'';}
+function rebuild(){
+  kids=new Map();
+  for(const d of S.dec.values()){const p=pid(d);if(!kids.has(p))kids.set(p,[]);kids.get(p).push(d);}
+  for(const a of kids.values())a.sort((x,y)=>((x.order||0)-(y.order||0))||((x.createdAt||0)-(y.createdAt||0)));
+  num=new Map();depthOf=new Map();
+  const walk=(p,pre,dep)=>{(kids.get(p)||[]).forEach((d,i)=>{const n=pre?pre+'.'+(i+1):String(i+1);num.set(d.id,n);depthOf.set(d.id,dep);walk(d.id,n,dep+1);});};
+  walk('','',0);
+}
+function flat(){const out=[];const walk=(p,dep)=>{for(const d of (kids.get(p)||[])){out.push([d,dep]);walk(d.id,dep+1);}};walk('',0);return out;}
+function descendants(id){const out=new Set(),st=[id];while(st.length){const x=st.pop();for(const c of (kids.get(x)||[]))if(!out.has(c.id)){out.add(c.id);st.push(c.id);}}return out;}
+function ancestors(d){const out=[];let x=d,guard=0;while(x&&pid(x)&&guard++<50){x=S.dec.get(x.parentId);out.unshift(x);}return out;}
+function label(d){return (num.get(d.id)||'?')+' '+(d.title||'(bez názvu)');}
+function commentCounts(){const m={};for(const c of S.com)m[c.decisionId]=(m[c.decisionId]||0)+1;return m;}
+function setSave(t){$('#saveState').textContent=t;}
+
+function handleErr(e){
+  console.error(e);
+  toast('Uložení se nezdařilo: '+((e&&e.message)||'neznámá chyba'));
+  setSave('');
+}
+function save(id,patch,touch=true){
+  if(!sb)return Promise.resolve();
+  const cols=toCols(patch);
+  if(touch){cols.updated_by=me;cols.updated_at=new Date().toISOString();}
+  // optimistic local update
+  const d=S.dec.get(id);if(d){Object.assign(d,patch);if(touch){d.updatedBy=me;d.updatedAt=Date.now();}}
+  setSave('Ukládám…');
+  queues[id]=(queues[id]||Promise.resolve()).then(async()=>{const {error}=await sb.from('rh_decisions').update(cols).eq('id',id);if(error)throw error;}).then(()=>setSave('Uloženo ✓')).catch(handleErr);
+  return queues[id];
+}
+
+// ---------- names ----------
+function fillNames(root){
+  (root||document).querySelectorAll('[data-uid]').forEach(e=>{const n=e.dataset.uid;e.textContent=n?(n===me?n+' (vy)':n):'—';});
+}
+
+// ---------- header stats ----------
+function renderStats(){
+  const c={};for(const d of S.dec.values())c[d.status||'navrh']=(c[d.status||'navrh']||0)+1;
+  $('#stats').innerHTML=Object.keys(STATUS).filter(k=>c[k]).map(k=>{const s=STATUS[k];return `<span class="pill" style="color:${s[1]};background:${s[2]}">${s[0]}: ${c[k]}</span>`;}).join('');
+}
+
+// ---------- tree ----------
+function matches(d){
+  if(S.st&&(d.status||'navrh')!==S.st)return false;
+  const q=S.q.trim().toLowerCase();if(!q)return true;
+  return ['title','question','intent','options','owner','consequence','decision'].some(k=>String(d[k]||'').toLowerCase().includes(q));
+}
+function renderTree(){
+  const box=$('#tree');
+  if(!S.loadedD){return;}
+  if(!S.dec.size){box.innerHTML=`<div class="empty">Zatím tu nejsou žádná rozhodnutí.${canWrite?'<br><br><button class="btn primary" data-addroot>+ Přidat první klíčové rozhodnutí</button>':''}</div>`;return;}
+  const filtering=!!(S.q.trim()||S.st);const vis=new Set();
+  if(filtering)for(const d of S.dec.values())if(matches(d)){vis.add(d.id);ancestors(d).forEach(a=>vis.add(a.id));}
+  const cc=commentCounts();
+  const build=(p,dep)=>{
+    const arr=(kids.get(p)||[]).filter(d=>!filtering||vis.has(d.id));if(!arr.length)return'';
+    return '<ul class="tree">'+arr.map(d=>{
+      const ch=(kids.get(d.id)||[]).length,open=filtering||!S.collapsed.has(d.id),s=stOf(d);
+      return `<li><div class="node lvl${Math.min(dep,3)} ${S.sel===d.id?'sel':''}" data-id="${esc(d.id)}">`+
+        `<button class="car" data-tog="${esc(d.id)}" ${ch?'':'disabled tabindex="-1"'} aria-label="Rozbalit / sbalit">${ch?(open?'▾':'▸'):''}</button>`+
+        `<span class="num">${num.get(d.id)||''}</span><span class="tt" title="${esc(d.title)}">${esc(d.title||'(bez názvu)')}</span>`+
+        (d.reversibility==='nevratne'?'<span class="irr" title="Nevratné rozhodnutí">⚑</span>':'')+
+        (cc[d.id]?`<span class="cc" title="Počet komentářů">✎ ${cc[d.id]}</span>`:'')+
+        `<span class="pill" style="color:${s[1]};background:${s[2]}">${s[0]}</span></div>`+
+        (ch&&open?build(d.id,dep+1):'')+'</li>';
+    }).join('')+'</ul>';
+  };
+  const html=build('',0);
+  box.innerHTML=html||'<div class="empty">Filtru neodpovídá žádné rozhodnutí.</div>';
+}
+
+// ---------- detail ----------
+function render(){rebuild();renderStats();renderTree();renderDetail();}
+function renderDetail(){
+  const d=S.sel&&S.dec.get(S.sel);const box=$('#detail');
+  if(!d){if(S.rendered!=='__ov'||true){box.innerHTML=overviewHTML();S.rendered='__ov';fillNames(box);}return;}
+  if(S.rendered!==d.id){box.innerHTML=detailHTML(d);S.rendered=d.id;bindDetail(d.id);box.scrollTop=0;}
+  syncDetail(d);
+  if(S.focusTitle){S.focusTitle=false;const t=box.querySelector('[data-f="title"]');if(t){t.focus();t.select();}}
+}
+function overviewHTML(){
+  const c={};for(const d of S.dec.values())c[d.status||'navrh']=(c[d.status||'navrh']||0)+1;
+  const irr=[...S.dec.values()].filter(d=>d.reversibility==='nevratne'&&d.status!=='rozhodnuto');
+  const feed=S.com.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
+  return `<div class="wrap ov"><h2>Jak s hierarchií pracovat</h2>
+  <p>Každé rozhodnutí nejvyšší úrovně se rozpadá na dílčí rozhodnutí, která z něj vyplývají a bez něj je nelze učinit. Vyberte rozhodnutí vlevo, doplňte záměr, varianty a garanta, přidejte podřízená rozhodnutí a diskutujte v komentářích. Změny ostatních členů skupiny se zobrazují živě.</p>
+  <div class="layers">
+    <div class="card"><b>Úroveň 1 – klíčová rozhodnutí</b><span class="muted">Rozhoduje předseda ÚRÚ ČR hned po jmenování. Nastavují směr celé transformace.</span></div>
+    <div class="card"><b>Úroveň 2 – dílčí rozhodnutí</b><span class="muted">Vyplývají z úrovně 1, typicky je činí vedení nebo transformační tým.</span></div>
+    <div class="card"><b>Úroveň 3+ – prováděcí rozhodnutí</b><span class="muted">Konkrétní kroky, které lze delegovat na odpovědné vedoucí.</span></div>
+  </div>
+  <div class="statGrid">${Object.keys(STATUS).map(k=>`<div class="card"><div class="n">${c[k]||0}</div><div class="faint">${STATUS[k][0]}</div></div>`).join('')}</div>
+  ${irr.length?`<div class="sec"><h3>Nevratná rozhodnutí, která ještě nepadla <span class="hint">vyžadují největší pozornost předsedy</span></h3><div class="card kids">${irr.sort((a,b)=>String(num.get(a.id)).localeCompare(String(num.get(b.id)),'cs',{numeric:true})).map(d=>kidRow(d)).join('')}</div></div>`:''}
+  <div class="sec"><h3>Poslední komentáře</h3><div class="card feed">${feed.length?feed.map(cm=>{const d=S.dec.get(cm.decisionId);return `<div class="cm" data-goto="${esc(cm.decisionId)}"><div class="cmh"><span class="who" data-uid="${esc(cm.author||'')}">…</span>· ${fmt(cm.createdAt)} · k ${esc(d?label(d):'smazanému rozhodnutí')}</div><div class="cmt">${esc(cm.text)}</div></div>`;}).join(''):'<span class="faint">Zatím žádné komentáře.</span>'}</div></div></div>`;
+}
+function kidRow(d){const s=stOf(d);return `<div class="kid" data-goto="${esc(d.id)}"><span class="num">${num.get(d.id)||''}</span><span class="tt">${esc(d.title||'(bez názvu)')}</span>${d.reversibility==='nevratne'?'<span class="irr">⚑</span>':''}<span class="pill" style="color:${s[1]};background:${s[2]}">${s[0]}</span></div>`;}
+function detailHTML(d){
+  return `<div class="wrap">
+  <div class="crumbs" id="crumbs"></div>
+  <span class="lvlTag" id="lvlTag"></span>
+  <div class="titleRow"><span class="bignum" id="bignum"></span><input data-f="title" maxlength="200" placeholder="Název rozhodnutí"></div>
+  <div class="actions" data-w>
+    <button class="btn primary" id="aChild">+ Podřízené rozhodnutí</button>
+    <button class="btn" id="aSib">+ Na stejné úrovni</button>
+    <button class="btn" id="aUp" title="Posunout výš">↑</button>
+    <button class="btn" id="aDown" title="Posunout níž">↓</button>
+    <button class="btn danger" id="aDel">Smazat</button>
+  </div>
+  <div class="grid">
+    <label class="f">Stav<select data-f="status">${Object.keys(STATUS).map(k=>`<option value="${k}">${STATUS[k][0]}</option>`).join('')}</select></label>
+    <label class="f">Vratnost<select data-f="reversibility">${Object.keys(REV).map(k=>`<option value="${k}">${REV[k]}</option>`).join('')}</select></label>
+    <label class="f">Kdo rozhoduje / garant<input data-f="owner" maxlength="120" placeholder="např. předseda ÚRÚ ČR"></label>
+    <label class="f">Termín rozhodnutí<input data-f="due" type="date"></label>
+    <label class="f">Nadřízené rozhodnutí<select id="parentSel"></select></label>
+  </div>
+  ${TEXTS.map(([k,l,h])=>`<div class="sec"><label class="f">${l}<textarea data-f="${k}" placeholder="${esc(h)}"></textarea></label></div>`).join('')}
+  <div class="sec"><h3>Závislosti <span class="hint">co musí být rozhodnuto dříve</span></h3>
+    <div class="card"><div class="chips" id="deps"></div><select id="depAdd" data-w class="btn" style="max-width:100%"></select>
+    <div id="rdeps" style="margin-top:10px"></div></div></div>
+  <div class="sec"><h3>Podřízená rozhodnutí <span class="hint" id="kidsHint"></span></h3><div class="card kids" id="kids"></div></div>
+  <div class="sec"><h3>Diskuse</h3><div class="card"><div id="cms"></div>
+    <form class="cmForm" id="cmForm" data-w><textarea id="cmText" placeholder="Napište komentář… (Ctrl+Enter odešle)"></textarea><div class="row"><span class="faint">Komentář uvidí všichni členové skupiny.</span><button class="btn primary" type="submit">Přidat komentář</button></div></form>
+  </div></div>
+  <div class="meta" id="meta"></div></div>`;
+}
+function autosize(t){t.style.height='auto';t.style.height=Math.max(62,t.scrollHeight+2)+'px';}
+function syncDetail(d){
+  const box=$('#detail');
+  box.querySelectorAll('[data-f]').forEach(el=>{
+    const f=el.dataset.f;if(el===document.activeElement||pending[d.id+'|'+f])return;
+    const v=d[f]==null?(f==='status'?'navrh':''):d[f];if(el.value!==v)el.value=v;
+    if(el.tagName==='TEXTAREA')autosize(el);
+  });
+  const anc=ancestors(d);
+  $('#crumbs').innerHTML=anc.length?anc.map(a=>`<a data-goto="${esc(a.id)}">${esc(label(a))}</a>`).join(' › ')+' ›':'Nejvyšší úroveň';
+  const dep=depthOf.get(d.id)||0;$('#lvlTag').textContent=LVL[Math.min(dep,3)];
+  $('#bignum').textContent=num.get(d.id)||'';
+  // parent select
+  const ps=$('#parentSel');if(ps!==document.activeElement){
+    const ex=descendants(d.id);ex.add(d.id);
+    ps.innerHTML='<option value="">— nejvyšší úroveň —</option>'+flat().filter(([x])=>!ex.has(x.id)).map(([x,dp])=>`<option value="${esc(x.id)}">${'  '.repeat(dp)}${esc(label(x))}</option>`).join('');
+    ps.value=pid(d);
+  }
+  // deps
+  const deps=(Array.isArray(d.deps)?d.deps:[]).filter(id=>S.dec.has(id));
+  $('#deps').innerHTML=deps.length?deps.map(id=>`<span class="chip"><a data-goto="${esc(id)}">${esc(label(S.dec.get(id)))}</a>${canWrite?`<button data-undep="${esc(id)}" title="Odebrat závislost">×</button>`:''}</span>`).join(''):'<span class="faint">Bez závislostí.</span>';
+  const da=$('#depAdd');if(da!==document.activeElement){
+    da.innerHTML='<option value="">+ Přidat závislost…</option>'+flat().filter(([x])=>x.id!==d.id&&!deps.includes(x.id)).map(([x,dp])=>`<option value="${esc(x.id)}">${'  '.repeat(dp)}${esc(label(x))}</option>`).join('');
+    da.value='';
+  }
+  const rd=[...S.dec.values()].filter(x=>Array.isArray(x.deps)&&x.deps.includes(d.id));
+  $('#rdeps').innerHTML=rd.length?'<div class="faint" style="margin-bottom:5px">Na tomto rozhodnutí závisí:</div><div class="chips">'+rd.map(x=>`<span class="chip"><a data-goto="${esc(x.id)}">${esc(label(x))}</a></span>`).join('')+'</div>':'';
+  // kids
+  const ks=kids.get(d.id)||[];
+  $('#kids').innerHTML=ks.length?ks.map(kidRow).join(''):`<span class="faint">Zatím žádná podřízená rozhodnutí.${canWrite?' Přidejte je tlačítkem „+ Podřízené rozhodnutí“.':''}</span>`;
+  $('#kidsHint').textContent=ks.length?ks.length+' · rozhodnuto '+ks.filter(k=>k.status==='rozhodnuto').length:'';
+  // comments
+  const list=S.com.filter(c=>c.decisionId===d.id).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  $('#cms').innerHTML=list.length?list.map(c=>`<div class="cm"><div class="cmh"><span class="who" data-uid="${esc(c.author||'')}">…</span>· ${fmt(c.createdAt)}${(canWrite&&c.author&&c.author===me)?`<button data-delc="${esc(c.id)}">Smazat</button>`:''}</div><div class="cmt">${esc(c.text)}</div></div>`).join(''):'<span class="faint">Zatím bez komentářů.</span>';
+  $('#meta').innerHTML=`Vytvořeno ${fmt(d.createdAt)}${d.createdBy?' · <span data-uid="'+esc(d.createdBy)+'">…</span>':''} · naposledy upraveno ${fmt(d.updatedAt)}${d.updatedBy?' · <span data-uid="'+esc(d.updatedBy)+'">…</span>':''}`;
+  $('#aDel').disabled=!!ks.length;$('#aDel').title=ks.length?'Nejdřív přesuňte nebo smažte podřízená rozhodnutí':'Smazat rozhodnutí';
+  const sib=kids.get(pid(d))||[];const i=sib.findIndex(x=>x.id===d.id);
+  $('#aUp').disabled=i<=0;$('#aDown').disabled=i<0||i>=sib.length-1;
+  applyRO();fillNames(box);
+}
+function bindDetail(id){
+  const box=$('#detail');
+  box.querySelectorAll('[data-f]').forEach(el=>{
+    const f=el.dataset.f,key=id+'|'+f;
+    const flush=()=>{if(!pending[key])return;clearTimeout(pending[key]);delete pending[key];let v=el.value;if(f==='title')v=v.trim()||'(bez názvu)';save(id,{[f]:v});};
+    if(el.tagName==='SELECT'||el.type==='date'){el.addEventListener('change',()=>{pending[key]=1;flush();});return;}
+    el.addEventListener('input',()=>{if(el.tagName==='TEXTAREA')autosize(el);clearTimeout(pending[key]);pending[key]=setTimeout(flush,800);if(f==='title'){const d=S.dec.get(id);}});
+    el.addEventListener('blur',flush);
+    if(f==='title')el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();el.blur();}});
+  });
+  $('#parentSel').addEventListener('change',e=>{
+    const np=e.target.value;const sib=kids.get(np)||[];
+    const order=sib.reduce((m,x)=>Math.max(m,x.order||0),0)+1;
+    if(np)S.collapsed.delete(np);
+    save(id,{parentId:np,order});e.target.blur();
+  });
+  $('#depAdd').addEventListener('change',e=>{
+    const v=e.target.value;if(!v)return;const d=S.dec.get(id);const deps=(Array.isArray(d.deps)?d.deps:[]).slice();if(!deps.includes(v))deps.push(v);
+    save(id,{deps});e.target.value='';e.target.blur();
+  });
+  $('#aChild').onclick=()=>createDecision(id);
+  $('#aSib').onclick=()=>createDecision(pid(S.dec.get(id)));
+  $('#aUp').onclick=()=>move(id,-1);
+  $('#aDown').onclick=()=>move(id,1);
+  $('#aDel').onclick=()=>confirmDelete(id);
+  const form=$('#cmForm'),ta=$('#cmText');
+  form.addEventListener('submit',e=>{e.preventDefault();addComment(id,ta);});
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();addComment(id,ta);}});
+}
+
+// ---------- actions ----------
+async function createDecision(parentId){
+  if(!sb)return;
+  const sib=kids.get(parentId||'')||[];const order=sib.reduce((m,x)=>Math.max(m,x.order||0),0)+1;
+  if(parentId)S.collapsed.delete(parentId);
+  setSave('Ukládám…');
+  const {data,error}=await sb.from('rh_decisions').insert({parent_id:parentId||null,sort_order:order,title:'Nové rozhodnutí',created_by:me,updated_by:me}).select().single();
+  if(error){handleErr(error);return;}
+  setSave('Uloženo ✓');
+  S.dec.set(data.id,fromRow(data));S.sel=data.id;S.focusTitle=true;render();
+}
+async function move(id,dir){
+  const d=S.dec.get(id);const sib=(kids.get(pid(d))||[]).slice();const i=sib.findIndex(x=>x.id===id),j=i+dir;
+  if(i<0||j<0||j>=sib.length)return;
+  [sib[i],sib[j]]=[sib[j],sib[i]];
+  for(let k=0;k<sib.length;k++)if((sib[k].order||0)!==k+1)await save(sib[k].id,{order:k+1},false);
+}
+function modal(html){$('#modal').innerHTML=html;$('#modalBg').style.display='flex';}
+function closeModal(){$('#modalBg').style.display='none';}
+$('#modalBg').addEventListener('click',e=>{if(e.target.id==='modalBg'||e.target.dataset.close!==undefined)closeModal();});
+function confirmDelete(id){
+  const d=S.dec.get(id);const n=S.com.filter(c=>c.decisionId===id).length;
+  modal(`<h3>Smazat rozhodnutí?</h3><p>${esc(label(d))}</p><p class="muted">Smaže se i ${n} komentář${n===1?'':n>=2&&n<=4?'e':'ů'} a odkazy na toto rozhodnutí v závislostech. Akci nelze vrátit.</p><div class="row"><button class="btn" data-close>Zrušit</button><button class="btn primary" id="doDel" style="background:var(--danger);border-color:var(--danger)">Smazat</button></div>`);
+  $('#doDel').onclick=async()=>{
+    closeModal();const parent=pid(d);
+    try{
+      setSave('Mažu…');
+      for(const x of [...S.dec.values()])if(Array.isArray(x.deps)&&x.deps.includes(id))await save(x.id,{deps:x.deps.filter(v=>v!==id)},false);
+      const {error}=await sb.from('rh_decisions').delete().eq('id',id);if(error)throw error;
+      S.dec.delete(id);S.com=S.com.filter(c=>c.decisionId!==id);
+      setSave('Smazáno ✓');
+    }catch(e){handleErr(e);}
+    S.sel=parent||null;render();
+  };
+}
+async function addComment(id,ta){
+  const t=ta.value.trim();if(!t||!sb)return;
+  if(!me){askName(false);return;}
+  ta.disabled=true;
+  try{const {data,error}=await sb.from('rh_comments').insert({decision_id:id,text:t.slice(0,8000),author:me}).select().single();if(error)throw error;S.com.push(fromCom(data));ta.value='';renderTree();renderDetail();}
+  catch(e){handleErr(e);}
+  ta.disabled=false;ta.focus();
+}
+function outline(){
+  const L=['# Rozhodovací hierarchie – transformace stavební správy',''];
+  const walk=(p,dp)=>{for(const d of (kids.get(p)||[])){const ind='  '.repeat(dp);const bits=[stOf(d)[0]];if(d.reversibility==='nevratne')bits.push('nevratné');if(d.owner)bits.push('garant: '+d.owner);if(d.due)bits.push('termín: '+fmtDate(d.due));
+    L.push(`${ind}- **${num.get(d.id)} ${d.title||''}** (${bits.join(', ')})`);
+    if(d.question)L.push(`${ind}  - Co se rozhoduje: ${d.question.replace(/\s*\n+\s*/g,' ')}`);
+    if(d.intent)L.push(`${ind}  - Záměr: ${d.intent.replace(/\s*\n+\s*/g,' ')}`);
+    const deps=(d.deps||[]).filter(x=>S.dec.has(x));if(deps.length)L.push(`${ind}  - Závisí na: ${deps.map(x=>num.get(x)).join(', ')}`);
+    if(d.decision)L.push(`${ind}  - Rozhodnuto: ${d.decision.replace(/\s*\n+\s*/g,' ')}`);
+    walk(d.id,dp+1);}};
+  walk('',0);return L.join('\n');
+}
+$('#btnExport').onclick=()=>{
+  const md=outline();
+  const fallback=()=>{modal(`<h3>Osnova hierarchie (Markdown)</h3><textarea id="mdOut" readonly>${esc(md)}</textarea><div class="row"><button class="btn" data-close>Zavřít</button></div>`);const t=$('#mdOut');t.focus();t.select();};
+  try{navigator.clipboard.writeText(md).then(()=>toast('Osnova zkopírována do schránky'),fallback);}catch(e){fallback();}
+};
+
+// ---------- read-only ----------
+function applyRO(){}
+
+// ---------- global events ----------
+document.addEventListener('click',e=>{
+  const tog=e.target.closest('[data-tog]');
+  if(tog){e.stopPropagation();const id=tog.dataset.tog;S.collapsed.has(id)?S.collapsed.delete(id):S.collapsed.add(id);renderTree();return;}
+  const und=e.target.closest('[data-undep]');
+  if(und){const d=S.dec.get(S.sel);if(d)save(d.id,{deps:(d.deps||[]).filter(x=>x!==und.dataset.undep)});return;}
+  const dc=e.target.closest('[data-delc]');
+  if(dc){const cid=dc.dataset.delc;sb.from('rh_comments').delete().eq('id',cid).then(({error})=>{if(error)return handleErr(error);S.com=S.com.filter(c=>c.id!==cid);renderTree();renderDetail();});return;}
+  if(e.target.closest('[data-addroot]')){createDecision('');return;}
+  const go=e.target.closest('[data-goto]');
+  if(go){select(go.dataset.goto);return;}
+  const node=e.target.closest('.node[data-id]');
+  if(node){select(node.dataset.id);}
+});
+function select(id){if(!S.dec.has(id))return;S.sel=id;let x=S.dec.get(id);ancestors(x).forEach(a=>S.collapsed.delete(a.id));renderTree();renderDetail();const n=document.querySelector(`.node[data-id="${CSS.escape(id)}"]`);if(n)n.scrollIntoView({block:'nearest'});}
+$('#q').addEventListener('input',e=>{S.q=e.target.value;renderTree();});
+$('#st').innerHTML+=Object.keys(STATUS).map(k=>`<option value="${k}">${STATUS[k][0]}</option>`).join('');
+$('#st').addEventListener('change',e=>{S.st=e.target.value;renderTree();});
+$('#btnExpand').onclick=()=>{S.collapsed.clear();renderTree();};
+$('#btnCollapse').onclick=()=>{for(const [p,a] of kids)if(a.length&&p)S.collapsed.add(p);renderTree();};
+$('#btnAddRoot').onclick=()=>createDecision('');
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+renderDetail();
+
+// ---------- init ----------
+function fromCom(r){return{id:r.id,decisionId:r.decision_id,author:r.author,text:r.text,createdAt:Date.parse(r.created_at)};}
+async function loadAll(){
+  const [a,b]=await Promise.all([sb.from('rh_decisions').select('*'),sb.from('rh_comments').select('*')]);
+  if(a.error||b.error)throw (a.error||b.error);
+  // keep locally edited (pending) values for fields being typed
+  S.dec=new Map(a.data.map(r=>[r.id,fromRow(r)]));
+  S.com=b.data.map(fromCom);
+  S.loadedD=S.loadedC=true;
+  if(S.sel&&!S.dec.has(S.sel))S.sel=null;
+  render();
+}
+let reloadT=null;
+function scheduleReload(){clearTimeout(reloadT);reloadT=setTimeout(()=>loadAll().catch(()=>{}),400);}
+function askName(force){
+  const cur=me;
+  modal(`<h3>Jak se jmenujete?</h3><p class="muted">Jméno se zobrazí u vašich komentářů a úprav. Uloží se jen v tomto prohlížeči.</p><input id="nameIn" class="btn" style="width:100%;text-align:left;padding:9px 11px" maxlength="60" value="${esc(cur)}" placeholder="např. Jan Novák"><div class="row">${cur?'<button class="btn" data-close>Zrušit</button>':''}<button class="btn primary" id="nameOk">Pokračovat</button></div>`);
+  const inp=$('#nameIn');inp.focus();
+  const ok=()=>{const v=inp.value.trim();if(!v){inp.focus();return;}me=v;lsSet('rh_name',v);$('#btnMe').textContent='Jméno: '+v;closeModal();renderDetail();};
+  $('#nameOk').onclick=ok;inp.addEventListener('keydown',e=>{if(e.key==='Enter')ok();});
+}
+$('#btnMe').onclick=()=>askName(true);
+(async()=>{
+  if(!window.supabase){$('#tree').innerHTML='<div class="empty">Nepodařilo se načíst knihovnu Supabase. Zkontrolujte připojení.</div>';return;}
+  sb=window.supabase.createClient(SB_URL,SB_KEY);
+  me=lsGet('rh_name');
+  if(me)$('#btnMe').textContent='Jméno: '+me;else askName(false);
+  try{await loadAll();}catch(e){$('#tree').innerHTML='<div class="empty">Data se nepodařilo načíst. Obnovte prosím stránku.</div>';console.error(e);return;}
+  sb.channel('rh').on('postgres_changes',{event:'*',schema:'public',table:'rh_decisions'},scheduleReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'rh_comments'},scheduleReload).subscribe();
+  setInterval(()=>{if(!document.hidden)scheduleReload();},30000);
+})();
+})();
+</script>
+</body>
+</html>
